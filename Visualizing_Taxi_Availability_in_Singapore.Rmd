@@ -1,0 +1,361 @@
+---
+title: "Visualizing Taxi Availability in Singapore"
+author: "Ng Wei Xuan"
+date: "5/26/2020"
+output: html_document
+---
+
+This project aims to visualize the availability of Taxis in Singapore at various times or dates.
+Consumers in Singapore often experience a lack of taxis when they urgently need one. Thus, this project aims to guide consumers and help them plan their trips by allowing them to see the taxi availability at the timings they want.
+
+The data is sourced from the Taxi Availability API from data.gov (https://data.gov.sg/dataset/taxi-availability)
+
+First, we need to load the required packages
+
+```{r echo = T, results = 'hide',message=FALSE,warning=FALSE}
+library(jsonlite)
+library(ggmap)
+library('revgeo')
+library(ggplot2)
+library(tidyverse)
+library(formattable)
+library(leaflet)
+```
+
+
+```{r include=FALSE}
+ggmap::register_google(key = 'Insert Google API Key Here')
+```
+
+
+Next, we need to find out how we can extract the data from the API. We will need to look at the query to get the data.
+
+Example date_time query :
+
+2020-01-02T13:11:05 means year 2020, 2nd Jan, 13:11pm,05 secs
+
+URL: "https://api.data.gov.sg/v1/transport/taxi-availability?date_time=2020-01-02T13%3A11%3A05"
+
+Now, lets explore the data, we see that it is in a tree structure, like a XML structure.
+```{r}
+
+url <- "https://api.data.gov.sg/v1/transport/taxi-availability?date_time=2020-01-02T11%3A11%3A05"
+data <- fromJSON(url)
+str(data)
+
+```
+
+
+This shows the total taxi count at the date_time
+```{r}
+#This is where the date_time query is applied
+
+url <- "https://api.data.gov.sg/v1/transport/taxi-availability?date_time=2020-01-02T11%3A11%3A05"
+data <- fromJSON(url)
+taxi_count <- as.data.frame(data$features$properties$taxi_count)
+taxi_count
+
+```
+
+
+
+This shows location coordinates of all taxis available for hire. Does not include "Hired" or "Busy"
+
+We are interested in this segment in particular as it will give us the location of available taxis at each time slot selected.
+```{r}
+coordinates <- as.data.frame(data$features$geometry$coordinates)
+
+head(coordinates)
+
+
+```
+
+
+
+Let's create a function to get a dataframe of coordinates over a range of dates and times.
+```{r}
+get_coordinates <- function (date1,date2,hour1,hour2) {
+  
+  #initialise an empty df for us to append to for every record with different time
+  empty_df <- data.frame(X1=NA,X2=NA,time=NA,Date=NA)
+  
+  #Initialise base urls
+  url1 <- "https://api.data.gov.sg/v1/transport/taxi-availability?date_time="
+  url2 <- "%3A" 
+  url3 <- "%3A"
+  #Format the variables accordingly
+  day1 <- as.numeric(format(as.Date(date1,format="%Y-%m-%d"), format = "%d"))
+  day2 <- as.numeric(format(as.Date(date2,format="%Y-%m-%d"), format = "%d"))
+  year1 <- as.numeric(format(as.Date(date1,format="%Y-%m-%d"), format = "%Y"))
+  year2 <- as.numeric(format(as.Date(date2,format="%Y-%m-%d"), format = "%Y"))
+  month1 <- as.numeric(format(as.Date(date1,format="%Y-%m-%d"), format = "%m"))
+  month2 <- as.numeric(format(as.Date(date2,format="%Y-%m-%d"), format = "%m"))
+  hour1 <- as.numeric(hour1)
+  hour2 <- as.numeric(hour2)
+  
+  #Loop through each year,month,day and hour as declared in the function
+  for (year in year1:year2) {
+    for (month in month1:month2) {
+      for (day in day1:day2) {
+        for (hour in hour1:hour2) {
+          
+            
+          #Ensure that day, month and hour are 2 digits because the URL only accepts it if they are in the proper format  
+          day <- formatC(day, digits = 2, width = 2, flag=0)
+          month <- formatC(month, digits = 2, width = 2, flag=0)
+          hour <- formatC(hour, digits = 2, width = 2, flag=0)
+          #get URL  
+          url <- paste(url1, year,"-", month, "-",day, "T", hour, url2, "00", url3, "00", sep="")
+          #extract data from url
+          data <- fromJSON(url)
+      
+          coordinates <- as.data.frame(data$features$geometry$coordinates)
+          time_stamp_date <- paste(year, "/",month,'/',day,sep='')
+            
+          time_stamp_time <- paste(hour,': 00',sep='')
+          coordinates$time <- time_stamp_time
+          coordinates$Date <- time_stamp_date
+          empty_df <- rbind(empty_df,coordinates)
+          empty_df$Date <- as.Date(time_stamp_date,format="%Y/%m/%d")
+            
+          
+        }
+      }
+    }
+  }
+    
+          
+  #We don't want the row of NA that was declared at the 1st column
+  return(na.omit(empty_df))
+}
+
+```
+
+Let's presume it is the 10th of January 2020 and we are planning to take a taxi at around 14:00 hours. We want to know whether taxis will be availabe at this time.
+
+To do so, we look at the taxi availability at 14:00 hours, over the past 2 days from 8 Jan 2020 to 9 Jan 2020 so that we can estimate the taxi availability for our trip on 10 Jan 2020 at around 14:00 hours as well.
+```{r}
+df <- get_coordinates("2020-01-08","2020-01-09",14,14)
+
+tail(df)
+```
+
+```{r}
+#Check number of records
+nrow(df)
+
+```
+
+So now we have a dataframe consisting of : 1) Coordinates of the taxi 2) Date 3) Time
+However, the coordinates by itself does not make much sense. We need to know the district corresponding to the coordinates in order for it to make sense. For instance, we are only interested in the taxi availability around our location and a X1 coordinate of 103 will not help us determine this.
+
+Thus, we will extract the district names corresponding to the coordinates. We will use the revgeocode function from ggmap.
+
+An example below shows that revgeocode function gives us various information corresponding to the coordinate. 
+
+We are interested in the one that contains "Tuas, Singapore". It seems that this occurs before the first record with "Singapore".
+
+```{r}
+length <- length(revgeocode(c(103.6314	,1.307750),output="all")$results)
+print(length)
+
+for (i in seq(1,length)) {
+  print(revgeocode(c(103.6314	,1.307750),output="all")$results[[i]]$formatted_address)
+  
+  
+}
+
+```
+
+Another example of the revgeocode function here.
+
+Again, the district name occurs before the first record with "Singapore". We are interested in "Tanglin, Singapore".
+
+Thus, the logic here is to access the record just before the first occurance of "Singapore". Let's try.
+
+```{r}
+
+length <- length(revgeocode(c(103.8294,1.288200),output="all")$results)
+print(length)
+
+for (i in seq(1,length)) {
+  print(revgeocode(c(103.8298, 1.318330),output="all")$results[[i]]$formatted_address)
+  
+  
+}
+
+
+```
+
+
+
+
+
+```{r, echo = T, results = 'hide',message=FALSE,warning=FALSE}
+
+for(i in 1:nrow(df)){
+    
+    #Look for the length of each revgeocode attribute for each row in df
+    length <- length(revgeocode(c(df$X1[i],df$X2[i]),output="all")$results)
+    
+    #Reduce the number of records to loop through
+    min_length <- length - 3
+    min_length <- max(min_length,1)
+    for(j in (min_length):length){
+      
+        obj <- (revgeocode(c(df$X1[i],df$X2[i]),output="all")$results[[j]]$formatted_address)
+        
+        #If the revgeocode attribute matches "Singapore" exactly, then extract the record before that
+        if ((obj)=='Singapore'){
+            target_index <- j - 1
+            
+            #The district name will be the record before "Singapore" occurs
+            district <- (revgeocode(c(df$X1[i],df$X2[i]),output="all")$results[[target_index]]$formatted_address)
+            #district <- sub(", Singapore", "", district)
+            district <- toupper(district)
+            df$District[i] <- district
+            break
+        } 
+        
+    }
+    
+}
+
+
+```
+
+
+```{r}
+head(df,10)
+
+```
+
+Now, we check if there are any records where the district name has been incorrectly extracted.
+
+We can see a few records where street name has been extracted instead of district names, such as "61 MARINA COASTAL DR, SINGAPORE" which should be categorised as "MARINA COASTAL DR, SINGAPORE" instead. 
+
+Also, there are records where district name is categorised as "YISHUN AVE 1, SINGAPORE" instead of "YISHUN, SINGAPORE".
+
+We will now replace these records with the correct district name.
+
+```{r}
+unique(df$District)
+
+```
+
+```{r}
+df$District <- ifelse(df$District=="61 MARINA COASTAL DR, SINGAPORE","MARINA COASTAL DR, SINGAPORE",df$District)
+df$District <- ifelse(df$District=="YISHUN AVE 1, SINGAPORE","YISHUN, SINGAPORE",df$District)
+
+unique(df$District)
+```
+
+We can exclude the records with District as "81750, JOHOR, MALAYSIA" for this project.
+
+```{r}
+df <- df[df$District != "81750, JOHOR, MALAYSIA",]
+
+unique(df$District)
+
+```
+
+
+```{r}
+#Clean the district names
+remove_word <- function(x) {
+  x <- gsub(", SINGAPORE","",x) 
+  return(x)
+}
+
+df$District <- sapply(df$District, remove_word)
+
+unique(df$District)
+
+```
+
+
+
+We can now visualise the taxi availability.
+
+We can visualize it using a bar plot.
+
+```{r}
+ggplot(df) +   geom_bar(aes(x=District)) + theme(axis.text.x=element_text(angle=90)) + theme(text = element_text(size=8)) + labs(x="District Name", y="Count of Taxis", title="Count of Taxis at various Districts at 14:00 hours")
+
+```
+
+However, it seems quite tedious to read from this bar plot, given the number of categories.
+
+We can visualize it as a formatted data table.
+```{r}
+df_counts <-  df%>%group_by(District) %>%count()%>%rename(Count_of_Taxis = n)   
+
+head(df_counts,10)
+
+```
+
+
+By using the formattable package, the visualization becomes much clearer.
+
+We can easily spot the districts with high taxi availability at 14:00 hours. For instance, Changi district has the highest number of available taxis at that time. This is likely to be because airports in Singapore are located at Changi.
+
+By looking at this data table, we can tell whether taxis will be available at 14:00 hours at our district for our upcoming trip, based on our district of interest.
+
+For instance, if we are looking for a taxi at a district such as "LIM CHU KANG", where there was only 1 taxi at 14:00 over the past 2 days, we should expect to find it difficult to find a taxi for our trip. We can then start to think of alternatives, such as pre-booking a taxi, since the chance of getting a taxi is quite low.
+
+```{r}
+
+formattable(df_counts, 
+            align = c("l",rep("r", NCOL(df_counts) - 1)),
+            list(`Indicator Name` = formatter("span", style = ~ style(color = "grey", font.weight = "bold")), 
+                 `Count_of_Taxis` = color_bar("#FA614B")))
+```
+
+We can also visualise this taxi availability information on a leaflet map.
+
+```{r}
+values <- unique(df$District)
+#print(values)
+
+#Assign each district a value
+assign_value <- function(x) {
+  if (x %in% values) {
+    index <- match(x,values)
+    return(index)
+  }
+  
+  
+}
+
+df_map <- df
+
+df_map$Group <- sapply(df$District,assign_value)
+head(df_map)
+
+```
+
+
+```{r}
+#number of groups
+k <- n_distinct(df_map$District)
+
+#base map
+map <- leaflet() %>% addProviderTiles(providers$CartoDB.Positron)
+
+#loop through all groups and add layer 1 by 1
+for (i in 1:k) {
+  map <- map %>%addCircleMarkers(data = df_map %>% filter(Group == i), group = as.character(values[i]), lng = ~X1, lat = ~X2, radius = 10, popup = ~District, clusterOptions = markerClusterOptions())
+  }
+
+#create layer control
+map %>% addLayersControl(overlayGroups = values,
+      options = layersControlOptions(collapsed = FALSE)) %>% 
+    hideGroup(as.character(c(2:k))) 
+
+
+
+```
+
+
+
+
