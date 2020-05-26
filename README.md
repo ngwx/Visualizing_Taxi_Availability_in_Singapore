@@ -1,12 +1,12 @@
 # Visualizing_Taxi_Availability_in_Singapore
 
-This project aims to visualize the availability of Taxis in Singapore at various times or dates.
+This project aims to visualize the availability of Taxis in Singapore at various times or dates in R.
 Consumers in Singapore often experience a lack of taxis when they urgently need one. Thus, this project aims to guide consumers and help them plan their trips by allowing them to see the taxi availability at the timings they want.
 
 The data is sourced from the Taxi Availability API from data.gov (https://data.gov.sg/dataset/taxi-availability)
 
 How to use:
-1. RStudio is required. Please install it to run the R markdown file.
+1. RStudio is required. Please install it to run the R markdown file (Visualizing_Taxi_Availability_in_Singapore.Rmd).
 
 2. Please install the required packages in R Studio. 
 Required Packages: jsonlite, ggmap, ggplot2, tidyverse, formattable, leaflet
