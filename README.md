@@ -8,7 +8,7 @@ Consumers in Singapore often experience a lack of taxis when they urgently need 
 The data is sourced from the Taxi Availability API from data.gov (https://data.gov.sg/dataset/taxi-availability)
 
 How to use:
-1. Please download the project (Clone or download button in green >> Click Download ZIP).
+1. Please download the project (Clone or download button in green >> Click Download ZIP) and unzip it.
 
 2. RStudio is required. Please install it to run the R markdown file (Visualizing_Taxi_Availability_in_Singapore.Rmd).
 
