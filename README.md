@@ -1,5 +1,7 @@
 # Visualizing_Taxi_Availability_in_Singapore
 
+Author: Ng Wei Xuan
+
 This project aims to visualize the availability of Taxis in Singapore in R.
 Consumers in Singapore often experience a lack of taxis when they urgently need one. Thus, this project aims to guide consumers and help them plan their trips by allowing them to see the taxi availability at the timings they want.
 
