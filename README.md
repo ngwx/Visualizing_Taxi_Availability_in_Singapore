@@ -1,6 +1,6 @@
 # Visualizing_Taxi_Availability_in_Singapore
 
-This project aims to visualize the availability of Taxis in Singapore at various times or dates in R.
+This project aims to visualize the availability of Taxis in Singapore in R.
 Consumers in Singapore often experience a lack of taxis when they urgently need one. Thus, this project aims to guide consumers and help them plan their trips by allowing them to see the taxi availability at the timings they want.
 
 The data is sourced from the Taxi Availability API from data.gov (https://data.gov.sg/dataset/taxi-availability)
